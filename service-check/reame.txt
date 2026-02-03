@@ -1,0 +1,200 @@
+README.txt
+==========
+
+Title
+-----
+Windows Service Health Check - Running + Auto-Start Not Running Report
+
+Prepared By
+-----------
+Erik Rey Santos
+
+Last Updated
+------------
+2026-02-03
+
+
+1) Overview
+-----------
+This script retrieves all Windows services on the target system and produces two primary views:
+
+  (1) Services currently RUNNING
+  (2) Services configured to start AUTOMATICALLY that are NOT RUNNING
+
+The goal is to quickly detect:
+  - Service drift (unexpected stopped services)
+  - Failed service starts after Windows Updates / patching
+  - Post-reboot service issues
+  - Misconfigurations (Automatic service that should be running but isn’t)
+  - Early indicators of application outages (web, middleware, monitoring agents, etc.)
+
+It is intended to be lightweight and safe to run (read-only checks).
+
+
+2) Synopsis
+-----------
+Retrieves all Windows services and displays:
+  1) currently running services
+  2) any services configured to Automatic start that are not running
+
+Helps detect service drift, failed services after patches/reboots, and misconfigurations.
+
+
+3) Supported Environments / Requirements
+----------------------------------------
+- Windows Server (2012 R2 and later recommended)
+- Windows PowerShell 5.1+ or PowerShell 7+ (script dependent; typical service queries work on both)
+- Permissions:
+    - Local: standard user can read many service properties, but admin is recommended for full fidelity
+    - Remote: requires WinRM enabled + permissions if the script supports remote execution
+
+Notes:
+- If executed against remote servers, you may need:
+    - WinRM configured (Enable-PSRemoting)
+    - Firewall rules allowing WinRM (HTTP 5985 / HTTPS 5986)
+    - Appropriate credential scope (domain creds or local admin with proper remoting configuration)
+
+
+4) What the Script Checks
+-------------------------
+For each service, the script typically collects:
+  - Service Name (ServiceName)
+  - Display Name (DisplayName)
+  - Status (Running / Stopped / Paused, etc.)
+  - Start Type (Automatic / Automatic (Delayed Start) / Manual / Disabled)
+  - Optional fields (if implemented):
+      - Log On As (StartName)
+      - Description
+      - Dependent services
+      - Process Id (PID) (service-hosted or separate process)
+      - Timestamp + Hostname metadata
+
+Primary report sets:
+  A) RUNNING services
+  B) AUTO-START services NOT RUNNING
+
+
+5) Use Cases
+------------
+Operational Readiness Checks
+  - Daily validation that critical services are up (before peak hours)
+  - Pre-maintenance baseline snapshot
+
+Post-Restart Verification
+  - Validate that all expected Automatic services came back after reboot
+  - Compare pre/post restart results for drift
+
+Incident Triage
+  - Fast list of auto-start services that failed to run
+  - Narrow down suspected application stacks (IIS, SQL, agents, schedulers)
+
+Change / Patch Validation
+  - After patching, verify no “silent failures” occurred on services
+
+
+6) How to Run
+-------------
+Local Run (same server):
+  1. Copy the script folder to a standard tools path (e.g., C:\Temp\PSScript\)
+  2. Open PowerShell as Administrator
+  3. Execute the script (example):
+        .\ServiceHealthCheck.ps1
+
+Remote Run (if supported by the script):
+  Example patterns (script-dependent):
+        .\ServiceHealthCheck.ps1 -ComputerName SERVER01
+        .\ServiceHealthCheck.ps1 -ComputerName SERVER01,SERVER02
+        .\ServiceHealthCheck.ps1 -ComputerName (Get-Content .\servers.txt)
+
+If execution policy blocks running scripts:
+  Option A (recommended, temporary for the session):
+        PowerShell.exe -ExecutionPolicy Bypass -File .\ServiceHealthCheck.ps1
+
+  Option B (set policy for LocalMachine, use with caution):
+        Set-ExecutionPolicy RemoteSigned -Scope LocalMachine
+
+
+7) Output / Reporting
+---------------------
+The script produces a human-readable console output plus (optionally) a log artifact.
+
+Typical output sections:
+  - Host metadata (hostname, date/time)
+  - RUNNING services table
+  - AUTO-START NOT RUNNING services table
+  - Summary counts
+
+If logging is enabled (recommended), logs may be written to a folder such as:
+  C:\Temp\PSScript\Logs\
+or another path defined in the script configuration.
+
+Recommended log naming convention:
+  os-check-<hostname>-<timestamp>.log
+Example:
+  os-check-SRV-APP01-2026-02-03_10-15-22.log
+
+
+8) How to Interpret Results
+---------------------------
+RUNNING Services
+  - Informational: confirms current state and provides baseline visibility
+
+AUTO-START NOT RUNNING
+  - Actionable: these should generally be running unless:
+      - They are triggered services (rare for "Automatic" but can occur)
+      - They are intentionally stopped for maintenance
+      - They fail due to dependency issues, credentials, or application errors
+
+Recommended immediate checks for any entry here:
+  - Review service recovery options (Restart on failure)
+  - Validate service account credentials / password expiry
+  - Check dependency services are started
+  - Review Windows Event Logs:
+      - System (Service Control Manager)
+      - Application (app-specific errors)
+
+
+9) Common Troubleshooting
+-------------------------
+A) “Access is denied”
+  - Run PowerShell as Administrator
+  - If remote: ensure WinRM is enabled and your account has rights
+
+B) Remote connection failures
+  - Confirm WinRM:
+        winrm quickconfig
+  - Confirm firewall rules and name resolution (DNS)
+  - If using local admin remotely, ensure policy allows it (UAC remote restrictions)
+
+C) Some services show “Automatic” but are expected stopped
+  - Validate if they are “Automatic (Delayed Start)” or special vendor logic
+  - Confirm with the application owner / runbook
+
+D) Services start but stop quickly
+  - Check Application/System event logs for crashes
+  - Confirm required ports, certificates, or dependencies are available
+
+
+10) Operational Best Practices
+------------------------------
+- Maintain a “critical services” allowlist for key application servers:
+    - Only alert on services that matter (avoid noise)
+- Use before/after comparisons during patch windows:
+    - Baseline (pre-reboot) vs validation (post-reboot)
+- Store logs centrally for audit and trending:
+    - Share path, SIEM, or log collector agent
+- Add thresholds / alerts:
+    - If AUTO-START NOT RUNNING count > 0, flag as failure
+
+
+11) Disclaimer
+--------------
+This script is provided “as-is” for operational visibility. Validate outputs in a lower environment
+before running in production. Ensure change control approvals are followed when integrating into
+automation pipelines.
+
+
+12) Contact / Ownership
+-----------------------
+Owner / Maintainer:
+  Erik Rey Santos
